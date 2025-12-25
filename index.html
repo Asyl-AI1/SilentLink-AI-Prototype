@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SilentLink v2.2 | Icons Updated</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+    <style>
+        .mirror { transform: scaleX(-1); }
+        .neon-glow { box-shadow: 0 0 15px #FACC15, 0 0 30px #FACC15; border-color: #FACC15 !important; }
+        .active-card { background-color: #1F2937; border-color: #FACC15; box-shadow: 0 0 10px #FACC15 inset; }
+        canvas { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
+        
+        @keyframes pulse-text {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+        .pulse-anim { animation: pulse-text 0.2s ease-in-out; }
+    </style>
+</head>
+<body class="bg-black text-yellow-400 font-sans min-h-screen flex flex-col items-center p-2 md:p-4">
+
+    <header class="w-full max-w-4xl flex justify-between items-center mb-4 border-b border-yellow-400/30 pb-4">
+        <div>
+            <h1 class="text-2xl font-bold tracking-wider">SILENT<span class="text-white">LINK</span></h1>
+            <p class="text-xs text-gray-400" id="sub-header">AI Голос для общения</p>
+        </div>
+        <div class="flex gap-2">
+            <button onclick="setLanguage('en')" class="lang-btn px-2 py-1 text-xs font-bold border border-yellow-400 rounded hover:bg-yellow-400 hover:text-black transition" data-lang="en">EN</button>
+            <button onclick="setLanguage('ru')" class="lang-btn px-2 py-1 text-xs font-bold border border-yellow-400 rounded hover:bg-yellow-400 hover:text-black transition active-lang" data-lang="ru">RU</button>
+            <button onclick="setLanguage('kz')" class="lang-btn px-2 py-1 text-xs font-bold border border-yellow-400 rounded hover:bg-yellow-400 hover:text-black transition" data-lang="kz">KZ</button>
+        </div>
+    </header>
+
+    <main class="w-full max-w-4xl flex flex-col gap-4">
+        
+        <div class="relative w-full aspect-video bg-gray-900 rounded-lg overflow-hidden border-2 border-yellow-400/50 shadow-lg">
+            <video id="input_video" class="absolute w-full h-full object-cover mirror" playsinline></video>
+            <canvas id="output_canvas" class="mirror"></canvas>
+            
+            <div class="absolute bottom-4 left-0 w-full text-center pointer-events-none">
+                <div id="gesture-display-container" class="inline-flex flex-col items-center bg-black/80 px-6 py-2 rounded-xl border border-yellow-400/50 backdrop-blur-sm transition-all duration-200">
+                    <span id="gesture-icon" class="text-4xl md:text-5xl mb-1">👋</span>
+                    <span id="gesture-text" class="text-2xl md:text-4xl font-bold text-white uppercase tracking-widest">...</span>
+                </div>
+            </div>
+            
+            <div class="absolute top-4 right-4 flex items-center gap-2 bg-black/60 px-3 py-1 rounded-full backdrop-blur-md">
+                <div id="status-dot" class="w-3 h-3 rounded-full bg-red-500"></div>
+                <span id="status-text" class="text-xs font-mono text-white">OFFLINE</span>
+            </div>
+        </div>
+
+        <div class="flex justify-between items-center bg-gray-900 p-3 rounded-lg border border-yellow-400/20">
+            <button id="tts-toggle" onclick="toggleTTS()" class="flex items-center gap-2 px-4 py-2 bg-yellow-400 text-black font-bold rounded hover:bg-yellow-300 transition shadow-md shadow-yellow-400/20">
+                <span id="tts-icon">🔇</span> <span id="tts-label">ВКЛЮЧИТЬ ГОЛОС</span>
+            </button>
+            <div class="text-right">
+                <p class="text-[10px] text-gray-400 uppercase">Точность (AI Confidence)</p>
+                <p class="text-lg font-mono text-white" id="confidence-score">0%</p>
+            </div>
+        </div>
+
+        <h3 class="text-sm text-gray-400 mt-2 uppercase tracking-wide">Библиотека жестов:</h3>
+        <div class="grid grid-cols-2 sm:grid-cols-5 gap-2 w-full pb-8">
+            </div>
+
+    </main>
+
+    <script>
+        // --- 1. CONFIGURATION & STATE ---
+        const config = {
+            minDetectionConfidence: 0.8,
+            minTrackingConfidence: 0.5,
+            stabilityThreshold: 10 
+        };
+
+        const state = {
+            currentLang: 'ru',
+            isTTSActive: false,
+            lastGesture: null,
+            stableGesture: null,
+            frameCounter: 0,
+            voices: []
+        };
+
+        // --- ОБНОВЛЕННЫЕ ИКОНКИ ---
+        const dictionary = {
+            en: {
+                subtitle: "AI Voice for the Deaf & Hard of Hearing",
+                voiceOn: "VOICE ON",
+                voiceOff: "VOICE OFF",
+                gestures: {
+                    "HELP": { text: "HELP", icon: "🖐️" },      // UPDATED
+                    "STOP": { text: "STOP", icon: "✋" },      // UPDATED
+                    "YES": { text: "YES", icon: "👍" },
+                    "NO": { text: "NO", icon: "👎" },
+                    "ATTENTION": { text: "HEY!", icon: "☝️" },
+                    "TWO": { text: "TWO", icon: "✌️" },
+                    "LOVE": { text: "LOVE", icon: "🤟" },
+                    "ROCK": { text: "ROCK", icon: "🤘" },
+                    "CALL": { text: "CALL ME", icon: "🤙" },
+                    "PAIN": { text: "PAIN", icon: "✊" },
+                    "NONE": { text: "...", icon: "👋" }
+                },
+                ttsLang: 'en-US'
+            },
+            ru: {
+                subtitle: "ИИ Голос для глухих и слабослышащих",
+                voiceOn: "ЗВУК ВКЛ",
+                voiceOff: "ЗВУК ВЫКЛ",
+                gestures: {
+                    "HELP": { text: "ПОМОГИТЕ", icon: "🖐️" },  // UPDATED
+                    "STOP": { text: "СТОП", icon: "✋" },      // UPDATED
+                    "YES": { text: "ДА", icon: "👍" },
+                    "NO": { text: "НЕТ", icon: "👎" },
+                    "ATTENTION": { text: "ВНИМАНИЕ", icon: "☝️" },
+                    "TWO": { text: "ДВА", icon: "✌️" },
+                    "LOVE": { text: "ЛЮБЛЮ", icon: "🤟" },
+                    "ROCK": { text: "РОК", icon: "🤘" },
+                    "CALL": { text: "ПОЗВОНИ", icon: "🤙" },
+                    "PAIN": { text: "БОЛЬ", icon: "✊" },
+                    "NONE": { text: "...", icon: "👋" }
+                },
+                ttsLang: 'ru-RU'
+            },
+            kz: {
+                subtitle: "Есту қабілеті шектеулі жандарға арналған ИИ",
+                voiceOn: "ДАУЫС ҚОСУ",
+                voiceOff: "ДАУЫС ӨШІРУ",
+                gestures: {
+                    "HELP": { text: "КӨМЕК", icon: "🖐️" },    // UPDATED
+                    "STOP": { text: "ТОҚТА", icon: "✋" },     // UPDATED
+                    "YES": { text: "ИӘ", icon: "👍" },
+                    "NO": { text: "ЖОҚ", icon: "👎" },
+                    "ATTENTION": { text: "НАЗАР", icon: "☝️" },
+                    "TWO": { text: "ЕКІ", icon: "✌️" },
+                    "LOVE": { text: "СҮЙЕМІН", icon: "🤟" },
+                    "ROCK": { text: "РОК", icon: "🤘" },
+                    "CALL": { text: "ҚОҢЫРАУ", icon: "🤙" },
+                    "PAIN": { text: "АУРУ", icon: "✊" },
+                    "NONE": { text: "...", icon: "👋" }
+                },
+                ttsLang: 'kk-KZ' 
+            }
+        };
+
+        const gestureKeys = ["HELP", "STOP", "YES", "NO", "ATTENTION", "TWO", "LOVE", "ROCK", "CALL", "PAIN"];
+
+        // --- 2. DOM ELEMENTS ---
+        const videoElement = document.getElementById('input_video');
+        const canvasElement = document.getElementById('output_canvas');
+        const canvasCtx = canvasElement.getContext('2d');
+        const gestureDisplayContainer = document.getElementById('gesture-display-container');
+        const gestureText = document.getElementById('gesture-text');
+        const gestureIcon = document.getElementById('gesture-icon');
+        const statusDot = document.getElementById('status-dot');
+        const statusText = document.getElementById('status-text');
+        const gridContainer = document.querySelector('.grid');
+
+        // --- 3. SPEECH SYNTHESIS ENGINE ---
+
+        function loadVoices() {
+            state.voices = window.speechSynthesis.getVoices();
+        }
+        
+        if (window.speechSynthesis.onvoiceschanged !== undefined) {
+            window.speechSynthesis.onvoiceschanged = loadVoices;
+        }
+
+        function getVoiceForLang(langCode) {
+            let exactVoice = state.voices.find(v => v.lang === langCode);
+            if (exactVoice) return exactVoice;
+
+            let prefixVoice = state.voices.find(v => v.lang.startsWith(langCode.split('-')[0]));
+            if (prefixVoice) return prefixVoice;
+
+            // KZ Fallback to RU
+            if (langCode === 'kk-KZ') {
+                return state.voices.find(v => v.lang.startsWith('ru'));
+            }
+
+            return null;
+        }
+
+        function speak(text) {
+            if (!state.isTTSActive) return;
+            if (!window.speechSynthesis) return;
+
+            window.speechSynthesis.cancel();
+
+            const utterance = new SpeechSynthesisUtterance(text);
+            const targetLang = dictionary[state.currentLang].ttsLang;
+            const selectedVoice = getVoiceForLang(targetLang);
+            
+            if (selectedVoice) {
+                utterance.voice = selectedVoice;
+                utterance.rate = 0.9; 
+                utterance.pitch = 1.0;
+            } else {
+                utterance.lang = targetLang;
+            }
+
+            window.speechSynthesis.speak(utterance);
+        }
+
+        function toggleTTS() {
+            if (state.voices.length === 0) loadVoices();
+            
+            state.isTTSActive = !state.isTTSActive;
+            const icon = document.getElementById('tts-icon');
+            const label = document.getElementById('tts-label');
+
+            if (state.isTTSActive) {
+                icon.innerText = "🔊";
+                label.innerText = dictionary[state.currentLang].voiceOn;
+                speak(state.currentLang === 'en' ? "Voice Active" : "Голос включен"); 
+            } else {
+                icon.innerText = "🔇";
+                label.innerText = dictionary[state.currentLang].voiceOff;
+                window.speechSynthesis.cancel();
+            }
+        }
+
+        // --- 4. UI FUNCTIONS ---
+        
+        function renderGrid() {
+            gridContainer.innerHTML = '';
+            const currentDict = dictionary[state.currentLang].gestures;
+            
+            gestureKeys.forEach(key => {
+                const data = currentDict[key];
+                const card = document.createElement('div');
+                card.className = `p-2 bg-gray-900 border border-gray-700 rounded-lg flex flex-col items-center justify-center transition-all duration-300 transform hover:scale-105 hover:border-yellow-400 cursor-default`;
+                card.id = `card-${key}`;
+                card.innerHTML = `
+                    <div class="text-3xl mb-1">${data.icon}</div>
+                    <div class="text-xs font-bold text-white text-center leading-tight">${data.text}</div>
+                    <div class="text-[9px] text-gray-500 mt-1 font-mono">${key}</div>
+                `;
+                gridContainer.appendChild(card);
+            });
+        }
+
+        function setLanguage(lang) {
+            state.currentLang = lang;
+            
+            document.getElementById('sub-header').innerText = dictionary[lang].subtitle;
+            document.getElementById('tts-label').innerText = state.isTTSActive ? dictionary[lang].voiceOn : dictionary[lang].voiceOff;
+            
+            document.querySelectorAll('.lang-btn').forEach(btn => {
+                if (btn.dataset.lang === lang) {
+                    btn.classList.add('bg-yellow-400', 'text-black');
+                } else {
+                    btn.classList.remove('bg-yellow-400', 'text-black');
+                }
+            });
+
+            if (state.stableGesture) {
+                const gData = dictionary[lang].gestures[state.stableGesture] || dictionary[lang].gestures["NONE"];
+                gestureText.innerText = gData.text;
+                gestureIcon.innerText = gData.icon;
+            }
+
+            renderGrid();
+        }
+
+        // --- 5. AI & MATH CORE ---
+
+        function getDistance(p1, p2) {
+            return Math.hypot(p1.x - p2.x, p1.y - p2.y);
+        }
+
+        function classifyGesture(landmarks) {
+            const wrist = landmarks[0];
+            const middleMCP = landmarks[9];
+            const palmScale = getDistance(wrist, middleMCP); 
+
+            if (palmScale < 0.05) return "NONE";
+
+            const isFingerOpen = (tipIdx, pipIdx) => {
+                const distTip = getDistance(landmarks[tipIdx], wrist);
+                const distPip = getDistance(landmarks[pipIdx], wrist);
+                return distTip > (distPip + (palmScale * 0.25)); 
+            };
+
+            const isThumbOpen = () => {
+                const distTip = getDistance(landmarks[4], landmarks[17]);
+                const distIp = getDistance(landmarks[2], landmarks[17]);
+                return distTip > distIp; 
+            };
+
+            const thumbOpen = isThumbOpen();
+            const indexOpen = isFingerOpen(8, 6);
+            const middleOpen = isFingerOpen(12, 10);
+            const ringOpen = isFingerOpen(16, 14);
+            const pinkyOpen = isFingerOpen(20, 18);
+
+            const thumbTipY = landmarks[4].y;
+            const thumbMCPY = landmarks[2].y;
+            const isThumbUp = thumbTipY < thumbMCPY; 
+            const isThumbDown = thumbTipY > thumbMCPY;
+
+            // Mapping
+            if (!thumbOpen && !indexOpen && !middleOpen && !ringOpen && !pinkyOpen) return "PAIN";
+            if (thumbOpen && indexOpen && middleOpen && ringOpen && pinkyOpen) return "HELP";
+            if (!thumbOpen && indexOpen && middleOpen && ringOpen && pinkyOpen) return "STOP";
+            if (thumbOpen && !indexOpen && !middleOpen && !ringOpen && !pinkyOpen && isThumbUp) return "YES";
+            if (thumbOpen && !indexOpen && !middleOpen && !ringOpen && !pinkyOpen && isThumbDown) return "NO";
+            if (!thumbOpen && indexOpen && !middleOpen && !ringOpen && !pinkyOpen) return "ATTENTION";
+            if (!thumbOpen && indexOpen && middleOpen && !ringOpen && !pinkyOpen) return "TWO";
+            if (!thumbOpen && indexOpen && !middleOpen && !ringOpen && pinkyOpen) return "ROCK";
+            if (thumbOpen && !indexOpen && !middleOpen && !ringOpen && pinkyOpen) return "CALL";
+            if (thumbOpen && indexOpen && !middleOpen && !ringOpen && pinkyOpen) return "LOVE";
+
+            return "NONE";
+        }
+
+        function onResults(results) {
+            canvasCtx.save();
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+            
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                const landmarks = results.multiHandLandmarks[0];
+                
+                // Draw Skeleton
+                drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {color: '#FACC15', lineWidth: 4});
+                drawLandmarks(canvasCtx, landmarks, {color: '#FFFFFF', lineWidth: 1, radius: 4});
+                
+                const detectedGesture = classifyGesture(landmarks);
+                
+                if (detectedGesture === state.lastGesture) {
+                    state.frameCounter++;
+                } else {
+                    state.frameCounter = 0;
+                    state.lastGesture = detectedGesture;
+                }
+
+                if (state.frameCounter > config.stabilityThreshold) {
+                    if (state.stableGesture !== detectedGesture) {
+                        state.stableGesture = detectedGesture;
+                        
+                        const gData = dictionary[state.currentLang].gestures[detectedGesture] || dictionary[state.currentLang].gestures["NONE"];
+                        
+                        gestureText.innerText = gData.text;
+                        gestureIcon.innerText = gData.icon;
+                        
+                        gestureDisplayContainer.classList.remove('neon-glow', 'pulse-anim');
+                        void gestureDisplayContainer.offsetWidth; 
+                        
+                        if (detectedGesture !== "NONE") {
+                            gestureDisplayContainer.classList.add('neon-glow', 'pulse-anim');
+                            speak(gData.text);
+                        }
+
+                        document.querySelectorAll('.grid > div').forEach(div => {
+                           div.classList.remove('active-card', 'text-yellow-400');
+                        });
+                        if (detectedGesture !== "NONE") {
+                            const activeCard = document.getElementById(`card-${detectedGesture}`);
+                            if (activeCard) activeCard.classList.add('active-card', 'text-yellow-400');
+                        }
+                    }
+                }
+
+                const confidence = results.multiHandedness[0].score;
+                document.getElementById('confidence-score').innerText = Math.round(confidence * 100) + "%";
+
+            } else {
+                state.frameCounter = 0;
+                document.getElementById('confidence-score').innerText = "0%";
+            }
+            canvasCtx.restore();
+        }
+
+        // Init Hands
+        const hands = new Hands({locateFile: (file) => {
+            return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+        }});
+
+        hands.setOptions({
+            maxNumHands: 1,
+            modelComplexity: 1,
+            minDetectionConfidence: config.minDetectionConfidence,
+            minTrackingConfidence: config.minTrackingConfidence
+        });
+
+        hands.onResults(onResults);
+
+        const camera = new Camera(videoElement, {
+            onFrame: async () => {
+                await hands.send({image: videoElement});
+            },
+            width: 1280,
+            height: 720
+        });
+
+        camera.start()
+            .then(() => {
+                statusDot.classList.remove('bg-red-500');
+                statusDot.classList.add('bg-green-500', 'neon-glow');
+                statusText.innerText = "SYSTEM ACTIVE";
+                loadVoices();
+            })
+            .catch(err => {
+                console.error(err);
+                statusText.innerText = "CAMERA ERROR";
+            });
+
+        setLanguage('ru');
+
+    </script>
+</body>
+</html>
